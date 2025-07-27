@@ -55,6 +55,9 @@ let realTimeScanIntervalId = null;
 let isProcessingFrame = false;
 const REAL_TIME_SCAN_INTERVAL_MS = 2000;
 
+// Stan audio
+let audioInitialized = false;
+
 // Funkcje zarządzania API key
 function updateApiStatus(isConnected, message) {
     if (!apiStatus) return;
@@ -542,6 +545,57 @@ async function stopRealTimeScanning() {
     updateOcrUI(false, textHasBeenRecognized, false);
 }
 
+// Funkcja do bezpiecznego odtwarzania dźwięku
+function playSnapSound() {
+    if (!snapSound) return;
+
+    try {
+        snapSound.currentTime = 0;
+        const playPromise = snapSound.play();
+
+        if (playPromise !== undefined) {
+            playPromise.catch(error => {
+                console.info("Dźwięk migawki nie może być odtworzony (wymaga interakcji użytkownika):", error.name);
+                // Nie pokazujemy błędu użytkownikowi - to normalne zachowanie przeglądarki
+            });
+        }
+    } catch (error) {
+        console.info("Błąd odtwarzania dźwięku migawki:", error.name);
+    }
+}
+
+// Inicjalizacja audio po pierwszej interakcji użytkownika
+function initializeAudio() {
+    if (audioInitialized || !snapSound) return;
+
+    try {
+        snapSound.volume = 0.1; // Ustawamy niską głośność dla testu
+        const playPromise = snapSound.play();
+
+        if (playPromise !== undefined) {
+            playPromise.then(() => {
+                snapSound.pause();
+                snapSound.currentTime = 0;
+                snapSound.volume = 1; // Przywracamy normalną głośność
+                audioInitialized = true;
+                console.info("Audio zainicjalizowane pomyślnie");
+            }).catch(() => {
+                // Audio nadal zablokowane, spróbujemy później
+            });
+        }
+    } catch (error) {
+        // Ignorujemy błędy inicjalizacji
+    }
+}
+
+// Event listener dla pierwszej interakcji z dokumentem
+function handleFirstInteraction() {
+    initializeAudio();
+    document.removeEventListener('click', handleFirstInteraction);
+    document.removeEventListener('keydown', handleFirstInteraction);
+    document.removeEventListener('touchstart', handleFirstInteraction);
+}
+
 // Event Listeners
 toggleCameraBtn?.addEventListener('click', async () => {
     if (stream) {
@@ -583,8 +637,8 @@ takePhotoBtn?.addEventListener('click', async () => {
             context.drawImage(webcamElement, 0, 0, videoWidth, videoHeight);
             context.setTransform(1, 0, 0, 1, 0, 0);
 
-            snapSound.currentTime = 0;
-            snapSound.play().catch(e => console.warn("Nie udało się odtworzyć dźwięku migawki:", e));
+            // Odtwórz dźwięk migawki z obsługą błędów autoplay
+            playSnapSound();
 
             const imageDataUrl = canvasElement.toDataURL('image/png');
 
@@ -748,7 +802,10 @@ fillFormBtn?.addEventListener('click', () => {
 });
 
 //Event Listeners dla API konfiguracji
-saveApiKeyBtn?.addEventListener('click', saveApiKey);
+document.getElementById('api-form')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    saveApiKey();
+});
 
 toggleApiVisibilityBtn?.addEventListener('click', () => {
     if (!apiKeyInput || !toggleApiVisibilityBtn) return;
@@ -791,12 +848,7 @@ document.querySelector('.api-header')?.addEventListener('click', (e) => {
     toggleApiSectionBtn?.click();
 });
 
-apiKeyInput?.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        saveApiKey();
-    }
-});
+// Usunięte - formularz obsługuje Enter automatycznie
 
 apiKeyInput?.addEventListener('input', () => {
     // Sprawdź czy klucz wygląda poprawnie (zaczyna się od AIza)
@@ -807,6 +859,11 @@ apiKeyInput?.addEventListener('input', () => {
         apiKeyInput.style.borderColor = '';
     }
 });
+
+// Dodaj event listenery dla pierwszej interakcji (inicjalizacja audio)
+document.addEventListener('click', handleFirstInteraction);
+document.addEventListener('keydown', handleFirstInteraction);
+document.addEventListener('touchstart', handleFirstInteraction);
 
 // Inicjalizacja aplikacji
 loadApiKey();
@@ -824,7 +881,7 @@ const allElementIds = [
     'scanner-overlay', 'zoom-controls', 'zoom-slider', 'zoom-value',
     'real-time-text-overlay', 'fill-form-btn', 'tractor-input', 'trailer-input',
     'api-key-input', 'save-api-key', 'toggle-api-visibility', 'api-status',
-    'toggle-api-section', 'api-content'
+    'toggle-api-section', 'api-content', 'api-form'
 ];
 
 const missingElements = allElementIds.filter(id => !document.getElementById(id));
